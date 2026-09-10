@@ -1,0 +1,11 @@
+{
+  "name": "facilitador-medico-paciente",
+  "version": "1.0.0",
+  "description": "Implementacao em JavaScript do diagrama de classes do sistema facilitador medico-paciente",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "license": "MIT"
+}

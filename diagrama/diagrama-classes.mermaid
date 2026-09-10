@@ -1,0 +1,284 @@
+classDiagram
+direction TB
+
+%% ==================================================
+%% NUCLEO / DOMINIO
+%% ==================================================
+class Usuario {
+  -id: UUID
+  -nome: String
+  -email: String
+  -telefone: String
+  -senhaHash: String
+}
+class Paciente {
+  -cpf: String
+  -dataNascimento: Date
+}
+class Medico {
+  -crm: String
+  -especialidade: Especialidade
+}
+Usuario "1" *-- "0..1" Paciente
+Usuario "1" *-- "0..1" Medico
+
+class Consulta {
+  -id: UUID
+  -dataHora: DateTime
+  -modalidade: Modalidade
+  -status: StatusConsulta
+  +confirmar()
+  +cancelar(motivo: String)
+  +remarcar(nova: DateTime)
+}
+class Documento {
+  -id: UUID
+  -tipo: TipoDocumento
+  -uri: String
+  -enviadoEm: DateTime
+  -autor: UUID
+}
+class Prontuario {
+  -id: UUID
+  +anexar(d: Documento)
+  +historico() List~Documento~
+}
+class Especialidade {
+  <<enumeration>>
+  CARDIOLOGIA
+  DERMATOLOGIA
+  ORTOPEDIA
+  PSIQUIATRIA
+}
+class StatusConsulta {
+  <<enumeration>>
+  SOLICITADA
+  CONFIRMADA
+  REALIZADA
+  CANCELADA
+}
+class TipoDocumento {
+  <<enumeration>>
+  EXAME_PREVIO
+  LAUDO
+  RECEITA
+  ATESTADO
+}
+class Modalidade {
+  <<enumeration>>
+  PRESENCIAL
+  TELECONSULTA
+}
+
+Paciente "1" --> "0..*" Consulta
+Medico "1" --> "0..*" Consulta
+Consulta "1" o-- "0..*" Documento
+Paciente "1" *-- "1" Prontuario
+Prontuario "1" o-- "0..*" Documento
+Medico ..> Especialidade
+Consulta ..> StatusConsulta
+Consulta ..> Modalidade
+Documento ..> TipoDocumento
+
+%% ==================================================
+%% AUTENTICACAO
+%% ==================================================
+class Sessao {
+  -token: String
+  -usuarioId: UUID
+  -expiraEm: DateTime
+}
+class AutenticacaoService {
+  <<interface>>
+  +login(email: String, senha: String) Sessao
+  +logout(s: Sessao)
+}
+AutenticacaoService ..> Usuario
+AutenticacaoService ..> Sessao
+
+%% ==================================================
+%% PORTAS (interfaces)
+%% ==================================================
+class AgendaService {
+  <<interface>>
+  +agendar(p: Paciente, m: Medico, dt: DateTime) Consulta
+  +cancelar(id: UUID, motivo: String)
+  +remarcar(id: UUID, nova: DateTime)
+}
+class DocumentoUploadPort {
+  <<interface>>
+  +enviar(d: Documento) UUID
+}
+class DocumentoDownloadPort {
+  <<interface>>
+  +baixar(id: UUID) Documento
+}
+class ConsultaRepository {
+  <<interface>>
+  +salvar(c: Consulta)
+  +buscarPorId(id: UUID) Consulta
+  +buscarPorMedicoNoDia(m: Medico, dia: Date) List~Consulta~
+}
+class Notificador {
+  <<interface>>
+  +notificar(u: Usuario, msg: Mensagem)
+}
+class PoliticaDisponibilidade {
+  <<interface>>
+  +estaLivre(m: Medico, dt: DateTime) bool
+}
+class Mensagem {
+  -titulo: String
+  -corpo: String
+  -criadaEm: DateTime
+}
+Notificador ..> Usuario
+Notificador ..> Mensagem
+
+%% ==================================================
+%% IA — planejamento futuro (agentes por especialidade)
+%% ==================================================
+class AnalisadorClinico {
+  <<interface>>
+  +analisar(c: Consulta, docs: List~Documento~) Sugestao
+}
+class ProvedorIA {
+  <<interface>>
+  +completar(prompt: String) String
+}
+class ConfigEspecialidadeRepository {
+  <<interface>>
+  +para(e: Especialidade) ConfiguracaoEspecialidade
+}
+class ConfiguracaoEspecialidade {
+  -especialidade: Especialidade
+  -promptBase: String
+  -docsEsperados: List~TipoDocumento~
+}
+class Sugestao {
+  -resumoClinico: String
+  -rascunhoConduta: String
+  -examesFaltantes: List~TipoDocumento~
+  -geradaEm: DateTime
+}
+class AnalisadorIA {
+  <<futuro>>
+  -config: ConfigEspecialidadeRepository
+  +analisar(c, docs) Sugestao
+}
+class TriagemService {
+  -analisador: AnalisadorClinico
+  +triar(c: Consulta) Sugestao
+}
+
+AnalisadorClinico <|.. AnalisadorIA
+AnalisadorIA ..> ConfigEspecialidadeRepository
+AnalisadorIA ..> ProvedorIA
+ConfigEspecialidadeRepository ..> ConfiguracaoEspecialidade
+TriagemService ..> AnalisadorClinico
+TriagemService ..> DocumentoDownloadPort
+AnalisadorClinico ..> Sugestao
+
+%% ==================================================
+%% APLICACAO
+%% ==================================================
+class AgendamentoServiceImpl {
+  -repo: ConsultaRepository
+  -notificador: Notificador
+  -politica: PoliticaDisponibilidade
+  +agendar(p, m, dt) Consulta
+  +cancelar(id, motivo)
+  +remarcar(id, nova)
+}
+AgendaService <|.. AgendamentoServiceImpl
+AgendamentoServiceImpl ..> ConsultaRepository
+AgendamentoServiceImpl ..> Notificador
+AgendamentoServiceImpl ..> PoliticaDisponibilidade
+
+%% ==================================================
+%% ADAPTADORES / INFRA
+%% ==================================================
+class ConsultaRepositoryPostgres {
+  -conexao: DataSource
+  +salvar(c: Consulta)
+  +buscarPorId(id: UUID) Consulta
+  +buscarPorMedicoNoDia(m, dia) List~Consulta~
+}
+class ConsultaRepositoryMemoria {
+  -consultas: List~Consulta~
+  +salvar(c: Consulta)
+  +buscarPorId(id: UUID) Consulta
+  +buscarPorMedicoNoDia(m, dia) List~Consulta~
+}
+class NotificadorEmail {
+  -servidorSmtp: String
+  +notificar(u, msg)
+}
+class NotificadorPush {
+  -chaveFirebase: String
+  +notificar(u, msg)
+}
+class NotificadorWhatsApp {
+  -numeroRemetente: String
+  +notificar(u, msg)
+}
+class ArmazenamentoS3 {
+  -bucket: String
+  -regiao: String
+  +enviar(d: Documento) UUID
+  +baixar(id: UUID) Documento
+}
+class AgendaPadraoMedico {
+  -inicioExpediente: Time
+  -fimExpediente: Time
+  +estaLivre(m, dt) bool
+}
+class AutenticacaoJWT {
+  -chaveSecreta: String
+  -validadeMin: int
+  +login(email, senha) Sessao
+  +logout(s: Sessao)
+}
+class ClienteAPIExternaIA {
+  -urlBase: String
+  -modelo: String
+  +completar(prompt) String
+}
+class ConfigEspecialidadePostgres {
+  -conexao: DataSource
+  +para(e) ConfiguracaoEspecialidade
+}
+
+ConsultaRepository <|.. ConsultaRepositoryPostgres
+ConsultaRepository <|.. ConsultaRepositoryMemoria
+Notificador <|.. NotificadorEmail
+Notificador <|.. NotificadorPush
+Notificador <|.. NotificadorWhatsApp
+DocumentoUploadPort <|.. ArmazenamentoS3
+DocumentoDownloadPort <|.. ArmazenamentoS3
+PoliticaDisponibilidade <|.. AgendaPadraoMedico
+AutenticacaoService <|.. AutenticacaoJWT
+ProvedorIA <|.. ClienteAPIExternaIA
+ConfigEspecialidadeRepository <|.. ConfigEspecialidadePostgres
+
+%% ==================================================
+%% INTERFACE DE ENTRADA (boundary)
+%% ==================================================
+class AppPaciente {
+  <<boundary>>
+  +agendarConsulta()
+  +enviarExamePrevio()
+}
+class AppMedico {
+  <<boundary>>
+  +verAgenda()
+  +lerExames()
+  +emitirLaudo()
+}
+AppPaciente ..> AutenticacaoService
+AppPaciente ..> AgendaService
+AppPaciente ..> DocumentoUploadPort
+AppMedico ..> AutenticacaoService
+AppMedico ..> AgendaService
+AppMedico ..> DocumentoDownloadPort
+AppMedico ..> TriagemService
