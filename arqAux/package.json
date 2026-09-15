@@ -1,0 +1,7 @@
+{
+  "name": "diagrama-clinica-typescript",
+  "version": "1.1.0",
+  "type": "module",
+  "scripts": { "build": "tsc", "check": "tsc --noEmit" },
+  "devDependencies": { "typescript": "^5.0.0" }
+}
